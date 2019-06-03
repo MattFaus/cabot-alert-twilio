@@ -1,3 +1,16 @@
+"""
+NOTE from Matt:
+
+I don't know how or why, but this file goes through some sort of post-processing
+before landing at
+    centos@horus:/opt/anaconda2/envs/cabot/lib/python2.7/site-packages/cabot_alert_twilio/models.py
+
+Since I rarely make tiny changes, I've just been hand-editing that file.
+
+See /opt/cabot/log/celery.log for error messages if this code doesn't work.
+You also need to actually fully restart Cabot web service to pick up changes,
+since these changes are running in the background celery processes.
+"""
 from os import environ as env
 
 from django.conf import settings
@@ -13,7 +26,7 @@ import logging
 from cabot.plugins.models import AlertPlugin, AlertPluginModel
 
 telephone_template = "This is an urgent message from Arachnys monitoring. Service \"{{ service.name }}\" is erroring. Please check Cabot urgently."
-sms_template = "Service {{ service.name }} {% if service.overall_status == service.PASSING_STATUS %}is back to normal{% else %}reporting {{ service.overall_status }} status{% endif %}: {{ scheme }}://{{ host }}{% url 'service' pk=service.id %}"
+sms_template = "{{ service.name }} {% if service.overall_status == service.PASSING_STATUS %}is back to normal{% else %}{{ service.overall_status }} due to: {{ service.kqr_failing_names }} {% endif %}"
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +37,7 @@ class TwilioUserSettingsForm(forms.Form):
     phone_number = forms.CharField(max_length=30)
 
     def clean(self, *args, **kwargs):
-	phone_number = self.cleaned_data['phone_number']
+        phone_number = self.cleaned_data['phone_number']
         if not phone_number.startswith('+'):
             self.cleaned_data['phone_number'] = '+{}'.format(phone_number)
         return super(TwilioUserSettingsForm, self).clean()
@@ -82,8 +95,8 @@ class TwilioSMSAlert(AlertPlugin):
 
     plugin_variables = [
         'TWILIO_ACCOUNT_SID',
-	'TWILIO_AUTH_TOKEN',
-	'TWILIO_OUTGOING_NUMBER'
+        'TWILIO_AUTH_TOKEN',
+        'TWILIO_OUTGOING_NUMBER'
     ]
 
     def send_alert(self, service, users, duty_officers):
@@ -95,7 +108,11 @@ class TwilioSMSAlert(AlertPlugin):
 
         client = TwilioRestClient(
             account_sid, auth_token)
-	mobiles = [u.cabot_alert_twilio_settings.phone_number for u in users]
+        mobiles = [u.cabot_alert_twilio_settings.phone_number for u in users]
+
+        # Hack to maintain compatibilty with non-hacked Cabot
+        if not hasattr(service, "kqr_failing_names"):
+            service.kqr_failing_names = "unknown"
 
         c = Context({
             'service': service,
