@@ -125,8 +125,8 @@ class TwilioSMSAlert(AlertPlugin):
                 client.sms.messages.create(
                     to=mobile,
                     from_=outgoing_number,
-                    body=message,
+                    body=message[:159],  # Twilio has a 160 character limit for texts
                 )
             except Exception, e:
-                logger.exception('Error sending twilio sms: %s' % e)
+                logger.exception('Error sending twilio sms: %s %s' % (e, message))
 
